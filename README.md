@@ -6,6 +6,7 @@ Stažení surových souborů HTML obstarává poměrně neefektivní skript z v�
 
 - Brute force stahování souborů (ani skript pro scrapování dat) si neporadí s url [Národního výboru 1918](https://www.psp.cz/eknih/1918nvc/stenprot/19181109/19181109_01.htm).
 - Chybí Senát.
+- Scrapovat / jinak doplňovat informace o jazyku vystoupení. Někde najdeme zmínku vedle mluvčího, někde je prostě vystoupení ponecháno v původním jazyce.
 - Ještě neprocházejí všechny testy scrapování, viz sešit ```004```.
     - Dopsat další testy: délka polí s mluvčími, počet vystoupení v dokumentu atd.
 - Při čištění pořešit projevy navazující z předchozího souboru.
