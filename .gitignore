@@ -3,3 +3,4 @@ _archiv/
 data_raw/
 data/*.parquet
 downloads/
+data/*/*.parquet
