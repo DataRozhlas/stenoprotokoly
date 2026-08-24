@@ -1,0 +1,12 @@
+[project]
+name = "stenoprotokoly"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "altair>=6.2.2",
+    "marimo>=0.24.0",
+    "polars>=1.44.0",
+    "ruff>=0.16.4",
+]

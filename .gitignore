@@ -7,3 +7,4 @@ data_raw/
 data/*.parquet
 downloads/
 data/*/*.parquet
+__marimo__
