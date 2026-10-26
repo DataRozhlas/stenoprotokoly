@@ -93,9 +93,7 @@ def _(pl, rozsahy_projevu_na_konci, rozsahy_projevu_na_zacatku):
             rozsahy_projevu_na_konci, how="full", on="jmeno"
         )
         .with_columns(
-            (pl.col("rozsah_znaku_right") / pl.col("rozsah_znaku")).alias(
-                "rozdil"
-            )
+            (pl.col("rozsah_znaku_right") / pl.col("rozsah_znaku")).alias("rozdil")
         )
         .drop_nulls(subset="rozdil")
         .sort(by="rozdil", descending=True)
@@ -108,16 +106,14 @@ def _(pl, rozsahy_projevu_na_konci, rozsahy_projevu_na_zacatku):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    A ted se podíváme po zubech na začátku roku 2023.
+    A ted se podíváme po zubech na začátku roku 2023. Nejdřív vyselektujeme mluvčí s největším poměrěm mezi slovy pronesenými v letech 23+24 a 18+19 (covid považujme za anomálii).
     """)
     return
 
 
 @app.cell
 def _(pl, zebricek):
-    kandidatstvo = (
-        zebricek.head(30).select(pl.col("jmeno")).to_series().to_list()
-    )
+    kandidatstvo = zebricek.head(40).select(pl.col("jmeno")).to_series().to_list()
     kandidatstvo
     return (kandidatstvo,)
 
@@ -154,7 +150,7 @@ def _(alt, df, kandidatstvo, pl):
     ).mark_bar().encode(
         alt.X("kvartal:N"),
         alt.Y("rozsah_znaku:Q"),
-        alt.Row("jmeno:N", header=alt.Header(orient="top")),
+        alt.Row("jmeno:N", header=alt.Header(orient="top"), sort=kandidatstvo),
         alt.Color("nastup_chatgpt:N"),
     ).resolve_scale(y="independent")
     return

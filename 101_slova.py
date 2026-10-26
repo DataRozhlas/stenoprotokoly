@@ -16,8 +16,4 @@ pl.scan_parquet("data_raw/smazat_projevy.parquet").with_columns(
     pl.col("text")
     .map_elements(clean_and_split_string, return_dtype=pl.List(pl.String))
     .alias("slova")
-).explode(
-    "slova"
-).sink_parquet(
-    "data_raw/slova.parquet"
-)
+).explode("slova").sink_parquet("data_raw/slova.parquet")
