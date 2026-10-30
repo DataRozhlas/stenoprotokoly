@@ -11,12 +11,8 @@ def _(mo):
 
     ### Předělat
     - první a poslední zmínky o věcech
-
-    ### Nové výpočty
-    - kdo roztleskává nejčastěji
-
-    ### Vytáhnout obrázky
-    - dávné poslankyně, kterým se tleskalo
+    - zmínky médií a knih
+    - MP3 babiš
     """)
     return
 
@@ -368,15 +364,21 @@ def get_var_name(var, scope=None):
 def _():
     import vl_convert as vlc
 
-    def uloz_graf(nazev_grafu):
-        spec = nazev_grafu.to_dict(validate=False)
-        svg = vlc.vegalite_to_svg(spec)
-        open(
-            f"grafy/jihlava_{get_var_name(nazev_grafu)}.svg",
-            "w",
-            encoding="utf-8",
-        ).write(svg)
-        print("Uloženo")
+    def uloz_graf(nazev_grafu, scale=2):
+      spec = nazev_grafu.to_dict(validate=False)
+      file_base = f"grafy/jihlava_{get_var_name(nazev_grafu)}"
+
+      # Uložení SVG
+      svg = vlc.vegalite_to_svg(spec)
+      with open(f"{file_base}.svg", "w", encoding="utf-8") as f:
+        f.write(svg)
+
+      # Uložení PNG
+      png_data = vlc.vegalite_to_png(spec, scale=scale)
+      with open(f"{file_base}.png", "wb") as f:
+        f.write(png_data)
+
+      print("Uloženo")
 
     return (uloz_graf,)
 
@@ -1260,7 +1262,119 @@ def _(lf, pl):
 
 
 @app.cell
-def _():
+def _(lf, pl):
+    zebricek_smichu_all = (
+        lf.with_columns(
+            pl.col("mluvci")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_mluvci")
+        )
+        .with_columns(
+            pl.col("text")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_text")
+        )
+        .explode("poznamky_text")
+        .filter(
+            pl.col("poznamky_text").str.contains("smích")
+            | pl.col("poznamky_text").str.contains("pobavení")
+            | pl.col("poznamky_text").str.contains("veselí")
+        )
+        .group_by("jmeno")
+        .len()
+        .join(
+            lf.with_columns(pl.col("text").str.count_matches(" "))
+            .group_by("jmeno")
+            .agg(pl.col("text").sum().alias("slov_celkem")),
+            how="left",
+            on="jmeno",
+        )
+        .with_columns((pl.col("slov_celkem") / pl.col("len")).alias("r"))
+        .sort(by="len", descending=True)
+        .collect()
+    )
+
+    zebricek_smichu_all
+    return (zebricek_smichu_all,)
+
+
+@app.cell
+def _(alt, pl, uloz_graf, zebricek_smichu_all):
+    graf_zebricek_smichu_all = (
+        alt.Chart(
+            zebricek_smichu_all.head(10),
+            title=alt.Title(
+                "Kdo Sněmovnu rozesmál nejvíckrát",
+                subtitle=["", "Hledáme smích, pobavení a veselí."],
+            ),
+        )
+        .mark_bar()
+        .encode(
+            alt.Y(
+                "jmeno:N",
+                sort=zebricek_smichu_all.head(10)
+                .select(pl.col("jmeno"))
+                .to_series()
+                .to_list(),
+            ),
+            alt.X(
+                "len:Q",
+                axis=alt.Axis(
+                    labelExpr="replace(datum.label,'','') + '×'", tickCount=5
+                ),
+            ),
+        )
+    )
+
+    uloz_graf(graf_zebricek_smichu_all)
+
+    graf_zebricek_smichu_all
+    return
+
+
+@app.cell
+def _(alt, pl, uloz_graf, zebricek_smichu_all):
+    graf_zebricek_smichu_all_r = (
+        alt.Chart(
+            zebricek_smichu_all.filter(pl.col('slov_celkem') >= 2000).filter(~pl.col("jmeno").str.contains_any(['(',')'])).filter(
+                ~pl.col("jmeno").is_in(["Richard Brabec", "Michael Canov"])
+            )
+            .sort(by="r", descending=False)
+            .head(10),
+            title=alt.Title(
+                "Největší šprýmařstvo",
+                subtitle=["", "Počet pronesených slov na jeden smích v sále.","(Pouze lidé, kteří pronesli 2000 a více slov.)"],
+            ),
+        )
+        .mark_bar()
+        .encode(
+            alt.Y(
+                "jmeno:N",
+                sort=zebricek_smichu_all.sort(by="r", descending=False)
+                .head(10)
+                .select(pl.col("jmeno"))
+                .to_series()
+                .to_list(),
+            ),
+            alt.X("r:Q", axis=alt.Axis(tickCount=5)),
+        )
+    )
+
+    uloz_graf(graf_zebricek_smichu_all_r)
+
+    graf_zebricek_smichu_all_r
     return
 
 
@@ -1432,7 +1546,7 @@ def _(alt, graf_rezimy, potlesk_po_letech, uloz_graf):
         alt.Y(
             "len:Q",
             axis=alt.Axis(
-                labelExpr="replace(datum.label, regexp('(\d),(?=\d{3})', 'g'), '$1 ') + '×'"
+                labelExpr="replace(replace(datum.label, regexp('(\\d),(?=\\d{3})', 'g'), '$1 '), ',', ' ') + '×'"
             ),
         ),
     )
@@ -1440,6 +1554,136 @@ def _(alt, graf_rezimy, potlesk_po_letech, uloz_graf):
     uloz_graf(potlesk_aplaus)
 
     potlesk_aplaus
+    return
+
+
+@app.cell
+def _(lf, pl):
+    zebricek_potlesku = (
+        lf.with_columns(
+            pl.col("mluvci")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_mluvci")
+        )
+        .with_columns(
+            pl.col("text")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_text")
+        )
+        .explode("poznamky_text")
+        .filter(
+            pl.col("poznamky_text").str.contains("potlesk")
+            | pl.col("poznamky_text").str.contains("aplaus")
+        )
+        .with_columns(pl.col("jmeno").str.replace("Posl.","posl."))
+        .group_by("jmeno")
+        .len()
+        .join(
+            lf.with_columns(pl.col("text").str.count_matches(" "))
+            .group_by("jmeno")
+            .agg(pl.col("text").sum().alias("slov_celkem")),
+            how="left",
+            on="jmeno",
+        )
+        .with_columns((pl.col("slov_celkem") / pl.col("len")).alias("r"))
+        .sort(by="len", descending=True)
+        .filter(~pl.col('jmeno').str.contains_any(['(',')']))
+        .collect()
+    )
+
+    zebricek_potlesku
+    return (zebricek_potlesku,)
+
+
+@app.cell
+def _(pl, zebricek_potlesku):
+    potlesk_nejcasteji_ciste = zebricek_potlesku.filter(pl.col('jmeno') != pl.col("jmeno").str.to_lowercase()).sort(by='r').filter(pl.col('slov_celkem') > 2000).filter(~pl.col('jmeno').is_in(['Opakujem','shromáždění Bechyně','vlády Široký']))
+
+    potlesk_nejcasteji_ciste
+    return (potlesk_nejcasteji_ciste,)
+
+
+@app.cell
+def _(alt, pl, uloz_graf, zebricek_potlesku):
+    graf_zebricek_potlesku = (
+        alt.Chart(
+            zebricek_potlesku.head(10),
+            title=alt.Title(
+                "Komu Sněmovna tleskala nejvíckrát"
+            ),
+        )
+        .mark_bar()
+        .encode(
+            alt.Y(
+                "jmeno:N",
+                sort=zebricek_potlesku.head(10)
+                .select(pl.col("jmeno"))
+                .to_series()
+                .to_list(),
+            ),
+            alt.X(
+                "len:Q",
+                axis=alt.Axis(
+                    labelExpr="replace(datum.label,'','') + '×'", tickCount=5
+                ),
+            ),
+        )
+    )
+
+    uloz_graf(graf_zebricek_potlesku)
+
+    graf_zebricek_potlesku
+    return
+
+
+@app.cell
+def _(potlesk_nejcasteji_ciste):
+    potlesk_nejcasteji_ciste.head(10)
+    return
+
+
+@app.cell
+def _(alt, pl, potlesk_nejcasteji_ciste, uloz_graf):
+    graf_zebricek_potlesku_r = (
+        alt.Chart(
+            potlesk_nejcasteji_ciste.head(10),
+            title=alt.Title(
+                "Komu Sněmovna tleskala nejčastěji"
+            ),
+        )
+        .mark_bar()
+        .encode(
+            alt.Y(
+                "jmeno:N",
+                sort=potlesk_nejcasteji_ciste.head(10)
+                .select(pl.col("jmeno"))
+                .to_series()
+                .to_list(),
+            ),
+            alt.X(
+                "r:Q",
+                axis=alt.Axis(
+                    labelExpr="'1 za ' + replace(datum.label,'','') + ' slov'", tickCount=3
+                ),
+            ),
+        )
+    )
+
+    uloz_graf(graf_zebricek_potlesku_r)
+
+    graf_zebricek_potlesku_r
     return
 
 
@@ -1562,7 +1806,23 @@ def _(lf, pl):
 
 
 @app.cell
-def _(alt, graf_rezimy, slava_po_letech):
+def _(lf, pl):
+    lf.with_columns(
+            pl.col("text")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_text")
+        ).explode("poznamky_text").filter(pl.col("poznamky_text").str.contains("sláva")).drop_nulls("datum").collect()
+    return
+
+
+@app.cell
+def _(alt, graf_rezimy, slava_po_letech, uloz_graf):
     slava = graf_rezimy + alt.Chart(
         slava_po_letech, title="Kolikrát zaznělo v sále „sláva!“"
     ).mark_bar(width=4).encode(
@@ -1575,7 +1835,70 @@ def _(alt, graf_rezimy, slava_po_letech):
         ),
     )
 
+    uloz_graf(slava)
+
     slava
+    return
+
+
+@app.cell
+def _(lf, pl):
+    hura_po_letech = (
+        lf.with_columns(
+            pl.col("text")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_text")
+        )
+        .explode("poznamky_text")
+        .filter(pl.col("poznamky_text").str.contains("hurá"))
+        .drop_nulls("datum")
+        .group_by_dynamic(index_column="datum", every="1y")
+        .len()
+        .collect()
+    )
+    return (hura_po_letech,)
+
+
+@app.cell
+def _(alt, graf_rezimy, hura_po_letech, uloz_graf):
+    hura = graf_rezimy + alt.Chart(
+        hura_po_letech, title="Kolikrát zaznělo v sále „hurá!“"
+    ).mark_bar(width=4).encode(
+        alt.X("datum:T"),
+        alt.Y(
+            "len:Q",
+            axis=alt.Axis(
+                labelExpr="replace(datum.label, regexp('(\d),(?=\d{3})', 'g'), '$1 ') + '×'",
+                tickCount = 1
+            ),
+        ),
+    )
+
+    uloz_graf(hura)
+
+    hura
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.with_columns(
+            pl.col("text")
+            .str.split("(")
+            .list.slice(1)
+            .list.eval(pl.element().str.split(")").list.first())
+            .list.eval(
+                pl.element().str.to_lowercase().str.strip_chars(),
+                parallel=True,
+            )
+            .alias("poznamky_text")
+        ).explode("poznamky_text").filter(pl.col("poznamky_text").str.contains("hurá")).drop_nulls("datum").collect()
     return
 
 
@@ -1727,7 +2050,7 @@ def _(alt, graf_rezimy, krik_po_letech, uloz_graf):
         alt.Y(
             "len:Q",
             axis=alt.Axis(
-                labelExpr="replace(datum.label, regexp('(\d),(?=\d{3})', 'g'), '$1 ') + '×'"
+                labelExpr="replace(replace(datum.label, regexp('(\\d),(?=\\d{3})', 'g'), '$1 '), ',', ' ') + '×'"
             ),
         ),
     )
@@ -1780,7 +2103,8 @@ def _(alt, buceni_po_letech, graf_rezimy, uloz_graf):
         alt.Y(
             "len:Q",
             axis=alt.Axis(
-                labelExpr="replace(datum.label, regexp('(\d),(?=\d{3})', 'g'), '$1 ') + '×'"
+                labelExpr="replace(datum.label, regexp('(\d),(?=\d{3})', 'g'), '$1 ') + '×'",
+                tickCount=1
             ),
         ),
     )
@@ -2255,6 +2579,112 @@ def _(lf, pl):
 @app.cell
 def _(ai, alt):
     alt.Chart(ai).mark_bar(size=4).encode(alt.X("datum:T"), alt.Y("r:Q"))
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Kuriozní mluvčí
+    """)
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)král")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)občan")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)reprezentant")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)princ")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)libye")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)bulhars")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)kazach")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)kazaš")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)polsk")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)kaddáf")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col("mluvci").str.contains("(?i)pre[sz]ident")).group_by("mluvci").len().sort(by="len",descending=True).collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col('mluvci') == "Prezident Francouzské republiky F. Mitterand").collect()
+    return
+
+
+@app.cell
+def _(lf, pl):
+    lf.filter(pl.col('mluvci').str.contains("Francesca Cossiga")).collect()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Válka
+    """)
+    return
+
+
+@app.cell
+def _(lf, pl):
+    print(lf.filter(pl.col("datum").dt.year() < 1942).select(pl.col('datum')).max().collect().item())
+    return
+
+
+@app.cell
+def _(lf, pl):
+    print(lf.filter(pl.col("datum").dt.year() > 1942).select(pl.col('datum')).min().collect().item())
     return
 
 
